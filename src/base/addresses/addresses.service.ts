@@ -206,6 +206,24 @@ export class AddressesService {
     return await this.addressRepository.find({
       where: { user: Not(IsNull()) } as FindOptionsWhere<AddressEntity>,
       relations: ['user', 'user.myCurrency', 'currency'],
+      select: {
+        id: true,
+        fullAddress: true,
+        user: {
+          id: true,
+          myCurrency: {
+            id: true,
+            code: true,
+          },
+        },
+        currency: {
+          id: true,
+          code: true,
+          name: true,
+          symbol: true,
+          limit: true,
+        },
+      },
     });
   }
 

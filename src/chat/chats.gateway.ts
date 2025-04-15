@@ -54,6 +54,8 @@ export class AppGateway
       }
 
       this.connectedUsers.set(client.id, userId.toString());
+      client.join(userId.toString());
+      this.connectedUsers.set(client.id, userId.toString());
 
       console.log(`Client connected: ${client.id}`);
     } catch (error) {
@@ -80,22 +82,22 @@ export class AppGateway
     const receiverIds = Array.isArray(payload.receiverId)
       ? payload.receiverId
       : [payload.receiverId];
-    const connectedReceiverIds = this.getByValue(
-      this.connectedUsers,
-      receiverIds.map((id) => id.toString()),
-    );
+    // const receiverIds = this.getByValue(
+    //   this.connectedUsers,
+    //   receiverIds.map((id) => id.toString()),
+    // );
 
     const chatMessage = await this.chatsService.sendMessage(payload as any);
 
     // Отправляем сообщение всем получателям
-    for (const receiver of connectedReceiverIds) {
-      client.to(receiver).emit('message', chatMessage);
+    for (const userId of receiverIds) {
+      this.server.to(userId).emit('message', chatMessage);
       const notification = new CreateNotificationDto();
-      notification.receiverId = Number(receiver);
-      notification.title = 'New Message from ' + chatMessage[0].senderId; // Используем первого отправителя
+      notification.receiverId = userId;
+      notification.title = 'New Message from ' + chatMessage[0].senderId; 
       notification.content = chatMessage[0].message || '';
       notification.read = false;
-      await this.sendNotificationToUser(receiver, notification);
+      await this.sendNotificationToUser(userId, notification);
     }
 
     // Отправляем сообщение администраторам
@@ -105,10 +107,10 @@ export class AppGateway
         admin.id.toString(),
       ]);
       if (adminReceiverId.length > 0) {
-        for (const receiver of adminReceiverId) {
-          client.to(admin.id.toString()).emit('message', chatMessage);
+        for (const admin of adminReceiverId) {
+          this.server.to(admin.id.toString()).emit('message', chatMessage);
           const notification = new CreateNotificationDto();
-          notification.receiverId = chatMessage[0].receiverId; // Используем первого получателя
+          notification.receiverId = admin.id; 
           notification.title = 'New Message from ' + chatMessage[0].senderId;
           notification.content = chatMessage[0].message || '';
           notification.read = false;
@@ -165,7 +167,7 @@ export class AppGateway
       payload.chatMessageId,
     );
     const senderId = chatMessage.senderId.toString();
-    client.to(senderId).emit('read', chatMessage.id);
+    this.server.to(senderId).emit('read', chatMessage.id);
   }
 
   async sendNotificationToUser(userId: number, notification: any) {
