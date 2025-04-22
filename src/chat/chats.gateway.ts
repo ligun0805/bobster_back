@@ -16,6 +16,9 @@ import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { CreateNotificationDto } from '../notify/dto/create-notification.dto';
 import { NotificationEntity } from '../notify/infrastructure/notification.entity';
+import { UserEntity } from '../users/infrastructure/entities/user.entity';
+import { InjectBot } from 'nestjs-telegraf';
+import { Telegraf } from 'telegraf';
 
 @Injectable()
 @WebSocketGateway(8000, { namespace: '/websocket', cors: { origin: '*' } })
@@ -32,6 +35,12 @@ export class AppGateway
     private readonly userService: UsersService,
     @InjectRepository(NotificationEntity)
     private readonly notificationRepository: Repository<NotificationEntity>,
+    @InjectRepository(UserEntity)
+    private readonly userRepository: Repository<UserEntity>,
+    @InjectBot('trader1Bot') private readonly trader1Bot: Telegraf<any>,
+    @InjectBot('trader2Bot') private readonly trader2Bot: Telegraf<any>,
+    @InjectBot('customerBot') private readonly customerBot: Telegraf<any>,
+    @InjectBot('referrerBot') private readonly referrerBot: Telegraf<any>,
   ) {}
 
   afterInit(_server: Server) {
@@ -80,22 +89,28 @@ export class AppGateway
     const receiverIds = Array.isArray(payload.receiverId)
       ? payload.receiverId
       : [payload.receiverId];
-    const connectedReceiverIds = this.getByValue(
-      this.connectedUsers,
-      receiverIds.map((id) => id.toString()),
-    );
 
     const chatMessage = await this.chatsService.sendMessage(payload as any);
+    const sender = await this.userRepository.findOne({
+      where: {
+        id: payload.senderId,
+      },
+    });
 
     // Отправляем сообщение всем получателям
-    for (const receiver of connectedReceiverIds) {
-      client.to(receiver).emit('message', chatMessage);
+    for (const receiver of receiverIds) {
+      const receiverId = this.getByValue(this.connectedUsers, [receiver]);
+      client.to(receiverId).emit('message', chatMessage);
       const notification = new CreateNotificationDto();
       notification.receiverId = Number(receiver);
       notification.title = 'New Message from ' + chatMessage[0].senderId; // Используем первого отправителя
       notification.content = chatMessage[0].message || '';
       notification.read = false;
-      await this.sendNotificationToUser(receiver, notification);
+      await this.sendNotificationToUser(
+        receiver,
+        notification,
+        sender?.tgUserName,
+      );
     }
 
     // Отправляем сообщение администраторам
@@ -112,7 +127,11 @@ export class AppGateway
           notification.title = 'New Message from ' + chatMessage[0].senderId;
           notification.content = chatMessage[0].message || '';
           notification.read = false;
-          await this.sendNotificationToUser(admin.id, notification);
+          await this.sendNotificationToUser(
+            admin.id,
+            notification,
+            sender?.tgUserName,
+          );
         }
       }
     }
@@ -168,7 +187,11 @@ export class AppGateway
     client.to(senderId).emit('read', chatMessage.id);
   }
 
-  async sendNotificationToUser(userId: number, notification: any) {
+  async sendNotificationToUser(
+    userId: number,
+    notification: any,
+    fromId?: string,
+  ) {
     await this.notificationRepository.save(
       this.notificationRepository.create({
         receiverId: userId,
@@ -181,6 +204,30 @@ export class AppGateway
     const clientId = this.getByValue(this.connectedUsers, [userId.toString()]);
 
     if (clientId) {
+      const user = await this.userRepository.findOne({
+        where: {
+          id: userId,
+        },
+      });
+      if (user) {
+        try {
+          await (() => {
+            if (user.role?.id === 2) {
+              return this.referrerBot.telegram;
+            } else if (user.role?.id === 3) {
+              return this.customerBot.telegram;
+            } else if (user.role?.id === 4) {
+              return this.trader1Bot.telegram;
+            }
+            return this.trader2Bot.telegram;
+          })().sendMessage(
+            user.tgId,
+            `New message from **${fromId || notification.from || 'Admin'}** \n ${notification.content}`,
+          );
+        } catch (error) {
+          console.log(`No chat ${user.tgId}`);
+        }
+      }
       this.server.to(clientId).emit('notification', notification);
     }
   }
