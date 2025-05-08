@@ -67,6 +67,10 @@ export class TelegramService {
     else {
       this.user = await this.usersService.findByTel_userName(tgUserName);
       if (this.user) {
+        if (this.user.tgId !== tgUserId) {
+          this.user.tgId = tgUserId;
+          await this.usersService.update(this.user.id, this.user);
+        }
         if (this.user.fee == null && this.user.role.id == RoleEnum.referer) {
           const refererDefaultFee = (
             await this.feeScheduleRepository.find({
@@ -78,8 +82,8 @@ export class TelegramService {
             })
           ).at(0)?.fee;
           this.user.fee = refererDefaultFee;
-          this.user.tgId = tgUserId;
-          await this.usersService.update(this.user.id, this.user);
+          // this.user.tgId = tgUserId;
+          // await this.usersService.update(this.user.id, this.user);
         } else if (
           this.user.fee == null &&
           this.user.role.id == RoleEnum.trader2

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
   UnprocessableEntityException,
+  BadRequestException,
 } from '@nestjs/common';
 import ms from 'ms';
 import crypto from 'crypto';
@@ -50,9 +51,30 @@ export class AuthService {
   async validateLogin(
     loginDto: AuthLoginDto,
   ): Promise<NullableType<LoginResponseDto>> {
-    const user = await this.usersService.findByTel_userId(loginDto.tgId);
+    // const user = await this.usersService.findByTel_userId(loginDto.tgId);
 
-    if (user) {
+    if (!loginDto.tgId && !loginDto.tgUserName) {
+       throw new BadRequestException(
+         'You need to specify at least tgId or tgUserName',
+       );
+    }
+
+   let user = loginDto.tgId
+     ? await this.usersService.findByTel_userId(loginDto.tgId)
+     : null;
+   
+   if (!user && loginDto.tgUserName) {
+     user = await this.usersService.findByTel_userName(loginDto.tgUserName);
+     if (user && loginDto.tgId && user.tgId !== loginDto.tgId) {
+       await this.usersService.update(user.id, { tgId: loginDto.tgId });
+     }
+   }
+   
+   if (!user) {
+     return null;
+   }
+
+    
       const hash = crypto
         .createHash('sha256')
         .update(randomStringGenerator())
@@ -74,9 +96,8 @@ export class AuthService {
         token,
         tokenExpires,
         user,
-      };
+      
     }
-    return null;
   }
 
   async adminLogin(

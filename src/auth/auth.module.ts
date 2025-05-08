@@ -12,6 +12,7 @@ import { SessionModule } from '../session/session.module';
 import { UsersModule } from '../users/users.module';
 import { CurrencyEntity } from '../base/currencies/infrastructure/currency.entity';
 import { LanguageEntity } from '../base/languages/infrastructure/language.entity';
+import { ReferralCodesModule } from '../referralcodes/referralcodes.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { LanguageEntity } from '../base/languages/infrastructure/language.entity
     MailModule,
     JwtModule.register({}),
     TypeOrmModule.forFeature([CurrencyEntity, LanguageEntity]),
+    ReferralCodesModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy, AnonymousStrategy],

@@ -11,10 +11,15 @@ import {
   Patch,
   Delete,
   SerializeOptions,
+  UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { AuthLoginDto } from './dto/auth-login.dto';
+import { AuthReferralRegisterDto } from './dto/auth-referral-register.dto';
+import { ReferralCodeService } from '../referralcodes/referralcodes.service';
+import { ReferralCodesRegisterLoginDto } from '../referralcodes/dto/referralcodes-register-login.dto';
 // import { AuthForgotPasswordDto } from './dto/auth-forgot-password.dto';
 // import { AuthConfirmEmailDto } from './dto/auth-confirm-email.dto';
 // import { AuthResetPasswordDto } from './dto/auth-reset-password.dto';
@@ -38,7 +43,10 @@ import { AuthCreateRefererDto } from './dto/auth-create-referer.dto';
   version: '1',
 })
 export class AuthController {
-  constructor(private readonly service: AuthService) {}
+  constructor(
+      private readonly service: AuthService,
+      private readonly referralCodeService: ReferralCodeService,
+    ) {}
 
   @SerializeOptions({
     groups: ['me'],
@@ -53,6 +61,44 @@ export class AuthController {
   ): Promise<NullableType<LoginResponseDto>> {
     return this.service.validateLogin(loginDto);
   }
+
+   @Post('register-with-referral')
+   @ApiOkResponse({ type: LoginResponseDto })
+   @HttpCode(HttpStatus.OK)
+   public async registerWithReferral(
+     @Body() dto: AuthReferralRegisterDto,
+   ): Promise<LoginResponseDto> {
+    
+     const codeEntity = await this.referralCodeService.findByCode(
+       dto.referralCode,
+     );
+     if (!codeEntity) {
+       throw new BadRequestException('Invalid referral code');
+     }
+ 
+     const registerDto: ReferralCodesRegisterLoginDto = {
+       userName: dto.userName,
+       tgId: dto.tgId,
+       tgUserName: dto.tgUserName,
+       fee: 0,
+       referralAmount: 0,
+       referralCode: {
+         id: codeEntity.id,
+         refererId: codeEntity.refererId,
+         roleId: codeEntity.roleId,
+       },
+       role: { id: codeEntity.roleId },
+     };
+ 
+     await this.referralCodeService.register(registerDto, codeEntity.refererId);
+ 
+     const loginResult = await this.service.validateLogin({ tgId: dto.tgId });
+     if (!loginResult) {
+       throw new UnauthorizedException('Cannot login after register');
+     }
+     return loginResult;
+   }
+   
 
   // @Post('register')
   // @HttpCode(HttpStatus.NO_CONTENT)
@@ -101,6 +147,18 @@ export class AuthController {
     createRefererDto.role.id = RoleEnum.referer;
     return await this.service.register(createRefererDto, 1);
   }
+
+  @Post('admin/createTrader2')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  public async createTrader2(
+    @Body() tgUserNameDto: AuthCreateRefererDto,
+  ): Promise<void> {
+    const createTraderDto = new AuthRegisterLoginDto();
+    createTraderDto.tgUserName = tgUserNameDto.tgUserName;
+    createTraderDto.role = { id: RoleEnum.trader2 };
+    await this.service.register(createTraderDto, 1);
+  }
+
 
   // @Post('email/confirm')
   // @HttpCode(HttpStatus.NO_CONTENT)
